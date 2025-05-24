@@ -1,0 +1,60 @@
+# Windows Local Persistence Techniques (Red Team Engagement)  
+
+**Objective:** Gained and maintained persistent access on a Windows target through multiple privilege escalation and backdoor techniques.  
+
+## **1. Tampering with Unprivileged Accounts**  
+- **Group Membership Manipulation:** Elevated standard users (`thmuser0`, `thmuser1`) to administrative privileges via `Administrators` and `Backup Operators` groups.  
+- **RID Hijacking:** Modified the Registry (`HKLM\SAM\SAM\Domains\Account\Users`) to assign Administrator RID (`500`) to a low-privilege user (`thmuser3`), enabling SYSTEM-level access.  
+- **Special Privileges:** Granted `SeBackupPrivilege` and `SeRestorePrivilege` to a standard user via `secedit`, enabling SAM database extraction for credential dumping.  
+  - **Tools Used:** `evil-winrm`, `secretsdump.py`, `regedit`.  
+  - **Flags Captured:**  
+    - `THM{FLAG_BACKED_UP!}`  
+    - `THM{TRUST_ME_IM_AN_ADMIN}`  
+
+## **2. Backdooring Files**  
+- **Executable Replacement:** Replaced `putty.exe` with a malicious payload using `msfvenom` to trigger reverse shells on execution.  
+- **Shortcut Hijacking:** Modified shortcut properties (`*.lnk`) to execute hidden PowerShell scripts (`backdoor.ps1`) spawning reverse shells.  
+- **File Association Abuse:** Hijacked `.txt` file associations (`HKLM\SOFTWARE\Classes\txtfile\shell\open\command`) to execute payloads silently.  
+  - **Flags Captured:**  
+    - `THM{NO_SHORTCUTS_IN_LIFE}`  
+    - `THM{TXT_FILES_WOULD_NEVER_HURT_YOU}`  
+
+## **3. Abusing Services**  
+- **Malicious Service Creation:** Deployed a custom service (`THMservice2`) with `sc.exe` to execute a reverse shell payload (`rev-svc.exe`) on startup.  
+- **Service Modification:** Altered the binary path of an existing service (`THMservice3`) to execute a staged payload, achieving persistence.  
+  - **Flags Captured:**  
+    - `THM{SUSPICIOUS_SERVICES}`  
+    - `THM{IN_PLAIN_SIGHT}`  
+
+## **4. Scheduled Task Persistence**  
+- **Covert Task Scheduling:** Created a hidden scheduled task (`schtasks`) running `nc64.exe` every minute to call back to attacker-controlled infrastructure.  
+- **Registry Stealth:** Deleted the task’s Security Descriptor (`HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache`) to evade detection.  
+  - **Flag Captured:**  
+    - `THM{JUST_A_MATTER_OF_TIME}`  
+
+## **5. Logon Triggered Backdoors**  
+- **Startup Folder:** Placed a reverse shell executable (`revshell.exe`) in `C:\ProgramData\...\StartUp` for execution upon user login.  
+- **Registry Run Keys:** Modified `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` to execute payloads persistently.  
+- **Winlogon Hijacking:** Appended malicious paths to `Userinit` and `Shell` keys in `HKLM\...\Winlogon`.  
+  - **Flags Captured:**  
+    - `THM{USER_TRIGGERED_PERSISTENCE_FTW}`  
+    - `THM{LET_ME_HOLD_THE_DOOR_FOR_YOU}`  
+
+## **6. RDP/Login Screen Abuse**  
+- **Sticky Keys Backdoor:** Replaced `sethc.exe` with `cmd.exe` to spawn a SYSTEM shell via the login screen (`SHIFT`x5).  
+- **Utilman Exploit:** Hijacked `utilman.exe` to gain privileged access through the "Ease of Access" button.  
+  - **Flags Captured:**  
+    - `THM{BREAKING_THROUGH_LOGIN}`  
+    - `THM{THE_LOGIN_SCREEN_IS_MERELY_A_SUGGESTION}`  
+
+## **7. Web Server & Database Persistence**  
+- **Web Shell Deployment:** Uploaded an ASP.NET web shell (`shell.aspx`) to `C:\inetpub\wwwroot` for command execution via HTTP.  
+- **MSSQL Backdooring:** Leveraged SQL Server agent jobs to execute payloads.  
+  - **Flags Captured:**  
+    - `THM{EZ_WEB_PERSISTENCE}`  
+    - `THM{I_LIVE_IN_YOUR_DATABASE}`  
+
+## **Key Takeaways**  
+✔ Mastered **10+ persistence techniques** across Windows services, tasks, and file systems.  
+✔ Demonstrated evasion by hiding artifacts in registry keys and scheduled tasks.  
+✔ Applied real-world offensive security methodologies to maintain long-term access.  
